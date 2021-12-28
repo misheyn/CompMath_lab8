@@ -1,6 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.optimize import minimize_scalar
+import scipy.optimize as optimize
+from scipy.optimize import LinearConstraint
+
+SOLX = 15
+
+linear_constrain = LinearConstraint([1, 1], 0, 6)
 
 
 def func1(x):
@@ -11,8 +17,18 @@ def diff_func1(x):
     return 2 * x - 30
 
 
-def func2(x1, x2):
+def func2(prm):
+    x1, x2 = prm
     return 4 / x1 + 9 / x2 + x1 + x2
+
+
+def b_func(prm) -> float:
+    x1, x2 = prm
+    return -(1 / x1 + x2 - 6)
+
+
+def F(prms, r):
+    return func2(prms) + r * b_func(prms)
 
 
 def newton_method(x0, eps):
@@ -21,29 +37,37 @@ def newton_method(x0, eps):
     while abs(diff_func1(x)) > eps:
         n += 1
         x = x - (diff_func1(x) / 2)
-    return x, func1(x), n
+    return x, n
 
 
-def scan_method(a, b, eps):
+def scan_method(a, b, h):
     x = xm = a
     y = ym = func1(x)
     n = 0
+    x_mins, y_mins = [], []
     while x < b:
         n += 1
         if y < ym:
             ym = y
             xm = x
-        x = x + eps
+            x_mins.append(xm)
+            y_mins.append(ym)
+        x = x + h
         y = func1(x)
-    return xm, ym, n
+    return xm, n, x_mins, y_mins
 
 
-def draw_graphs(x, minx, miny, ttl, lbl):
+def local_min_newton(x, e):
+    x0 = 199
+    minx, count = newton_method(x0, e)
+    print("xmin = ", minx, "ymin = ", func1(minx))
+    print("number of iteration newton method: ", count)
     min_scp = minimize_scalar(func1, bounds=(2, 200), tol=e)
-    plt.title(ttl)
+
+    plt.title("Single variable function: local min")
     plt.plot(x, func1(x), label='original function')
     plt.scatter(min_scp.x, min_scp.fun, c='g', label="scipy")
-    plt.scatter(minx, miny, c='r', label=lbl)
+    plt.scatter(minx, func1(minx), c='r', label="newton method")
     plt.legend()
     plt.grid()
     plt.show()
@@ -52,20 +76,69 @@ def draw_graphs(x, minx, miny, ttl, lbl):
     print('err = ', summa, "\n")
 
 
+def global_min_scan(x, a, b, e):
+    n = 1000
+    h = (b - a) / n
+    minx, count, sol_xm, sol_ym = scan_method(a, b, h)
+    print("xmin = ", round(minx, 3), "ymin = ", func1(minx))
+    print("number of iteration scan method: ", count)
+    min_scp = minimize_scalar(func1, bounds=(a, b), tol=e)
+
+    plt.title("Single variable function: global min")
+    plt.plot(x, func1(x), label='original function')
+    plt.scatter(sol_xm, sol_ym, label='minimize by scan method')
+    plt.scatter(min_scp.x, min_scp.fun, c='g', label="scipy")
+    plt.scatter(minx, func1(minx), c='r', label="min by scan method")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    summa = abs(minx - min_scp.x)
+    print('err = ', summa, "\n")
+
+
+def min_barriers(x1, r, b, eps):
+    while r * b_func(x1) > eps:
+        r = b * r
+        result = optimize.minimize(F, x1, r)
+        x1 = result.x
+    print("min = ", x1)
+    x = np.linspace(-10, 10, 50)
+    y = np.linspace(-10, 10, 50)
+    X, Y = np.meshgrid(x, y)
+    Z = func2([X, Y])
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_surface(X, Y, Z, cmap='viridis')
+    plt.title('3D graph of a function of two variables')
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    plt.show()
+
+
+def two_sol():
+    initial_guess = [1, 1]
+    result = optimize.minimize(func2, initial_guess, constraints=linear_constrain)
+    if result.success:
+        fitted_params = result.x
+        print(fitted_params)
+    else:
+        raise ValueError(result.message)
+
+
 X = np.arange(2, 200, 0.01)
-X0 = 55
-hi = 0.01
 e = 10e-3
 
-res1x, res1y, count1 = newton_method(X0, e)
-print("xmin = ", res1x, "ymin = ", res1y)
-print("number of iteration newton method: ", count1)
-draw_graphs(X, res1x, res1y, "Single variable function", "newton method")
+local_min_newton(X, e)
 
-res2x, res2y, count2 = scan_method(2, 200, e)
-print("xmin = ", round(res2x, 3), "ymin = ", res2y)
-print("number of iteration scan method: ", count2)
-draw_graphs(X, res2x, res2y, "Single variable function", "scan method")
+global_min_scan(X, 2, 200, e)
 
 res = minimize_scalar(func1, bounds=(2, 200), tol=e)
 print("xmin = ", res.x, "ymin = ", res.fun)
+
+min_barriers([1, 1], 1, 0.01, 10e-3)
+min_barriers([1, 1], 1, 0.01, 10e-5)
+min_barriers([1, 1], 1, 0.01, 10e-7)
+
+two_sol()
